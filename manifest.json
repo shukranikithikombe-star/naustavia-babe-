@@ -1,0 +1,9 @@
+{
+  "name": "Naustavia Safe",
+  "short_name": "Naustavia",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f1423",
+  "theme_color": "#00ff88",
+  "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/7648/7648249.png","sizes": "512x512","type": "image/png"}]
+}
