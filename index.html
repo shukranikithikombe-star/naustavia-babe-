@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Naustavia Safe - Live Chart + Safe v3</title>
+<style>
+body{background:#0f1423;color:white;font-family:Arial;margin:0;padding:0}
+.header{padding:15px;text-align:center}
+.tab{display:inline-block;padding:8px 18px;border-radius:20px;margin:4px;background:#1e2740;color:#888;font-weight:bold;font-size:12px}
+.tab.active{background:#0f3d2e;border:1px solid #00ff88;color:#00ff88}
+.signal{padding:16px;border-radius:14px;text-align:center;font-size:22px;font-weight:900;margin:10px 15px}
+.buy{background:#00c853} .sell{background:#ff1744} .wait{background:#ff9800;color:black}
+.card{background:#1e2740;padding:10px;border-radius:12px;display:inline-block;width:29%;text-align:center;margin:2px}
+.small{font-size:11px;color:#888} .big{font-size:16px;font-weight:bold}
+.box{border:1px dashed #00ff88;padding:12px;border-radius:10px;margin:10px 15px;background:#0f2a1f;font-size:13px;line-height:1.5}
+#tv{height:380px;width:100%;border-radius:12px;overflow:hidden;margin:0 0 10px 0}
+button{width:94%;margin:10px 3%;padding:14px;background:#00ff88;border:0;border-radius:12px;font-weight:bold;font-size:16px;color:#000}
+</style>
+</head>
+<body>
+<div class="header">
+<h2 style="margin:5px 0">NAUSTAVIA SAFE</h2>
+<div><span class="tab active">SCALPER</span><span class="tab">SNIPER</span><span class="tab">LIVE CHART</span></div>
+<div class="small" style="margin-top:6px">EMA 50/200 + RSI 14 + ATR 1.5x SL / 3x TP | 1:2 RR</div>
+</div>
+
+<!-- LIVE CHART - Like your screenshot -->
+<div style="margin:0 10px;background:#000;border-radius:12px;overflow:hidden">
+<div id="tv"></div>
+</div>
+
+<div id="signal" class="signal wait">LOADING LIVE GOLD...</div>
+
+<div style="text-align:center">
+<div class="card"><div id="price" class="big">--</div><div class="small">LIVE PRICE</div></div>
+<div class="card"><div id="rsi" class="big">--</div><div class="small">RSI</div></div>
+<div class="card"><div id="ema" class="big">--</div><div class="small">EMA 50/200</div></div>
+</div>
+
+<div class="box" id="detail">Calculating safe entries...</div>
+<button onclick="load()">SCAN NOW</button>
+
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+// 1. LIVE CHART - Same as your screenshot
+new TradingView.widget({
+  "autosize": true,
+  "symbol": "OANDA:XAUUSD",
+  "interval": "15",
+  "timezone": "Africa/Nairobi",
+  "theme": "dark",
+  "style": "1",
+  "locale": "en",
+  "toolbar_bg": "#0f1423",
+  "enable_publishing": false,
+  "allow_symbol_change": true,
+  "container_id": "tv"
+});
+
+// 2. SAFE LOGIC - Correct entries like your SAFE v3 code
+function ema(data, period){
+ let k = 2/(period+1); let emaArray=[]; let sma=0;
+ for(let i=0;i<period;i++) sma+=data[i]; sma/=period; emaArray[period-1]=sma;
+ for(let i=period;i<data.length;i++){ emaArray[i]=data[i]*k + emaArray[i-1]*(1-k); }
+ return emaArray;
+}
+function rsiCalc(data, period=14){
+ let gains=0, losses=0; 
+ for(let i=1;i<=period;i++){ let d=data[i]-data[i-1]; if(d>=0) gains+=d; else losses-=d; }
+ let avgG=gains/period, avgL=losses/period; let rsi=[]; rsi[period]=100-(100/(1+(avgG/(avgL||1))));
+ for(let i=period+1;i<data.length;i++){ let d=data[i]-data[i-1]; let g=d>0?d:0; let l=d<0?-d:0; avgG=(avgG*(period-1)+g)/period; avgL=(avgL*(period-1)+l)/period; let rs=avgL==0?100:avgG/avgL; rsi[i]=100-(100/(1+rs)); }
+ return rsi;
+}
+function atrCalc(high, low, close, period=14){
+ let tr=[]; for(let i=1;i<close.length;i++){ tr[i]=Math.max(high[i]-low[i], Math.abs(high[i]-close[i-1]), Math.abs(low[i]-close[i-1])); }
+ let atr=[]; let sum=0; for(let i=1;i<=period;i++) sum+=tr[i]; atr[period]=sum/period;
+ for(let i=period+1;i<tr.length;i++){ atr[i]=(atr[i-1]*(period-1)+tr[i])/period; } return atr;
+}
+
+async function load(){
+ try{
+  let res = await fetch('https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=15m&limit=250');
+  let klines = await res.json();
+  let closes = klines.map(k=>parseFloat(k[4]));
+  let highs = klines.map(k=>parseFloat(k[2]));
+  let lows = klines.map(k=>parseFloat(k[3]));
+  let price = closes[closes.length-1];
+  let e50 = ema(closes,50).pop();
+  let e200 = ema(closes,200).pop();
+  let r = rsiCalc(closes,14).pop();
+  let atr = atrCalc(highs,lows,closes,14).pop();
+
+  document.getElementById('price').innerText = price.toFixed(2);
+  document.getElementById('rsi').innerText = r.toFixed(0);
+  document.getElementById('ema').innerText = e50.toFixed(0)+'/'+e200.toFixed(0);
+
+  let sigDiv = document.getElementById('signal');
+  let detail = document.getElementById('detail');
+
+  let isLong = price > e50 && e50 > e200 && r > 48 && r < 65;
+  let isShort = price < e50 && e50 < e200 && r < 52 && r > 35;
+
+  if(r < 35 || r > 65){
+   sigDiv.className='signal wait';
+   sigDiv.innerText = 'WAIT ⚠️ RSI '+r.toFixed(0)+' - Unsafe';
+   detail.innerHTML = '🛑 NO TRADE - Price: '+price.toFixed(2)+' EMA50: '+e50.toFixed(2)+' EMA200: '+e200.toFixed(2)+'<br>RSI '+r.toFixed(0)+' outside safe 35-65. Wait for pullback.<br><br><b>Correct Entry Logic:</b> Entry='+price.toFixed(2)+' | ATR SL='+(atr*1.5).toFixed(2);
+  } else if(isLong){
+   let sl=(price-atr*1.5).toFixed(2); let tp=(price+atr*3).toFixed(2);
+   sigDiv.className='signal buy'; sigDiv.innerText = 'BUY ✅ RSI '+r.toFixed(0);
+   detail.innerHTML = '📈 BUY - Entry: <b>'+price.toFixed(2)+'</b> SL: <b>'+sl+'</b> TP: <b>'+tp+'</b><br>EMA50 '+e50.toFixed(2)+' > EMA200 '+e200.toFixed(2)+' | RSI '+r.toFixed(0)+' | RR 1:2 | ATR '+atr.toFixed(2);
+  } else if(isShort){
+   let sl=(price+atr*1.5).toFixed(2); let tp=(price-atr*3).toFixed(2);
+   sigDiv.className='signal sell'; sigDiv.innerText = 'SELL 🔴 RSI '+r.toFixed(0);
+   detail.innerHTML = '📉 SELL - Entry: <b>'+price.toFixed(2)+'</b> SL: <b>'+sl+'</b> TP: <b>'+tp+'</b><br>EMA50 '+e50.toFixed(2)+' < EMA200 '+e200.toFixed(2)+' | RSI '+r.toFixed(0)+' | RR 1:2 | ATR '+atr.toFixed(2);
+  } else {
+   sigDiv.className='signal wait'; sigDiv.innerText = 'WAIT ⚪ RSI '+r.toFixed(0)+' - No Trend';
+   detail.innerHTML = '⏳ WAIT - Price: '+price.toFixed(2)+' EMA50: '+e50.toFixed(2)+' EMA200: '+e200.toFixed(2)+'<br>No EMA alignment. Best trade on pullback to '+e50.toFixed(2)+'<br><br><b>Safe Entries:</b> Wait for Price > EMA50 > EMA200 for BUY';
+  }
+ } catch(e){ document.getElementById('detail').innerText='Error: '+e+' - Retrying...'; }
+}
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>
